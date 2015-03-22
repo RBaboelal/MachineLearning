@@ -1,0 +1,118 @@
+---
+title: "MachineLearning"
+author: "Boyke Baboelal"
+date: "Sunday, March 22, 2015"
+---
+### Executive summary
+In this paper we build a machine learning algorithm to predict activity quality from activity monitors. The model built is a generalized linear model. The performance of the model in the prediction is expected to have similar precisions as model performance in training. The predictions are presented in the results section.
+
+### Libraries and data set used
+The following code loads the data sets. The data contains metrics retrieved from wearable monitors and is used to predict the classification of body movements.
+
+```{r, results='hide',message=FALSE, warning=FALSE}
+library(caret); library(kernlab)
+buildset<-read.csv("pml-training.csv")
+forprediction<-read.csv("pml-testing.csv")
+```
+
+The data used comes from: Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.
+
+### Data preparation
+The data contains columns with sparse data. These columns are omitted in the analysis. In addition we add a numeric variable that represents the factor variable 'classe' as we are going to use the glm method in this analysis.
+
+```{r, results='hide', fig.show='hide'}
+training<-buildset[,c(8:11,37:49,60:68,84:86,102,113:124,140,151:160)] #subsetting data
+training$classInt      <- 0 #add a new column and represent classe with numeric values
+training$classInt[training$classe=="A"] <- 1
+training$classInt[training$classe=="B"] <- 2
+training$classInt[training$classe=="C"] <- 3
+training$classInt[training$classe=="D"] <- 4
+training$classInt[training$classe=="E"] <- 5
+```
+
+### Cross validation data set generation
+We will use 80% of data to train the model and use 20% for testing the model.
+
+```{r, results='hide', fig.show='hide'}
+inTrain<-createDataPartition(y=training$classe, p=0.8, list=FALSE)
+train<-training[inTrain,]
+test<-training[-inTrain,]
+```
+
+### Model fitting
+
+We predict the numeric class variable ('classInt') against all selected variables (except 'classe' of course).
+
+```{r}
+modFit <- train(classInt ~ . -classe , data=train, method="glm")
+modFit
+```
+The R-squared is 0.47.
+
+#### Model selection strategy
+The strategy is to remove the items that do not have significant coefficients.
+
+#### Model
+The following model was achieved using above strategy.
+
+```{r}
+modFit <- train(classInt ~ . -classe -roll_arm -accel_dumbbell_y -gyros_forearm_y , data=train, method="glm")
+modFit
+```
+
+All parameters are significantly different than zero according to the p-values. The R-squared is 0.49.
+
+#### Out of sample error estimation
+The error in the training sample is:
+```{r}
+missClass = function(values,prediction){sum(prediction != values)/length(values)}
+prediction<-predict(modFit,newdata=train)
+prediction<-round(prediction, digits = 0)
+prediction[prediction > 5] <- 5
+prediction[prediction < 1] <- 1
+values<-train$classInt
+missClass(values,prediction)
+```
+The error seems quite large. However if we look at how far the prediction is of the actual value, the results are very acceptable. The following error shows if prediction deviates more than 1 category from the actual value:
+
+```{r}
+missClass_2 = function(values,prediction){sum(abs(prediction - values)>1)/length(values)}
+missClass_2(values,prediction)
+```
+
+This result is very acceptable.
+
+The error in the test sample is:
+
+```{r}
+prediction<-predict(modFit,newdata=test)
+prediction<-round(prediction, digits = 0)
+prediction[prediction > 5] <- 5
+prediction[prediction < 1] <- 1
+values<-test$classInt
+missClass(values,prediction)
+```
+The values are quite close, which means that the model does not overfit. A similar performance can be expected when predicting.
+
+### Prediction results
+
+```{r}
+forprediction$classe  <- as.factor("A")
+prediction<-predict(modFit,newdata=forprediction)
+prediction<-round(prediction, digits = 0)
+prediction[prediction >= 5] <- "E"
+prediction[prediction == 4] <- "D"
+prediction[prediction == 3] <- "C"
+prediction[prediction == 2] <- "B"
+prediction[prediction <= 1] <- "A"
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(prediction)
+prediction
+```
+
